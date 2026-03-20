@@ -1,0 +1,24 @@
+{
+  "name": "jira-ai-testcase-generator",
+  "version": "1.0.0",
+  "description": "Jira Forge App tự động generate test cases bằng AI khi task chuyển trạng thái",
+  "main": "src/index.js",
+  "scripts": {
+    "build:frontend": "cd frontend && npm install && npm run build",
+    "deploy": "npm run build:frontend && forge deploy --environment production --no-verify",
+    "test": "jest",
+    "lint": "eslint src/"
+  },
+  "dependencies": {
+    "@forge/api": "^2.0.0",
+    "@forge/events": "^2.1.1",
+    "@forge/resolver": "^1.0.0"
+  },
+  "devDependencies": {
+    "eslint": "^8.0.0",
+    "jest": "^29.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

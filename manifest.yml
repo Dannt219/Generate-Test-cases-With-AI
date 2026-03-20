@@ -1,0 +1,53 @@
+modules:
+  function:
+    - key: trigger-handler
+      handler: index.triggerHandler
+    - key: queue-worker
+      handler: queueWorker.handler
+      timeoutSeconds: 900
+    - key: settings-resolver
+      handler: resolvers/index.handler
+
+  consumer:
+    - key: testcase-consumer
+      queue: testcase-queue
+      function: queue-worker
+
+  jira:adminPage:
+    - key: settings-page
+      title: AI TestCase Generator
+      resource: settings-resource
+      resolver:
+        function: settings-resolver
+
+  trigger:
+    - key: issue-transition-trigger
+      function: trigger-handler
+      events:
+        - avi:jira:updated:issue
+        - avi:jira:commented:issue
+
+resources:
+  - key: settings-resource
+    path: static/hello-world
+
+app:
+  id: ari:cloud:ecosystem::app/2093f02c-a744-459c-8cfc-50a08b0eead8
+  runtime:
+    name: nodejs22.x
+
+permissions:
+  scopes:
+    - read:jira-work
+    - write:jira-work
+    - read:jira-user
+    - storage:app
+  external:
+    fetch:
+      backend:
+        - https://api.anthropic.com
+        - https://api.openai.com
+        - https://api.figma.com
+        - https://sheets.googleapis.com
+        - https://www.googleapis.com
+        - https://oauth2.googleapis.com
