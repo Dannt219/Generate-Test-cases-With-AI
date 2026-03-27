@@ -73,6 +73,24 @@ function isValidTransition(event) {
 }
 
 /**
+ * Lấy description của Jira project
+ */
+async function fetchProjectDescription(projectKey) {
+  try {
+    const response = await api.asApp().requestJira(
+      api.route`/rest/api/3/project/${projectKey}`,
+      { method: 'GET', headers: { 'Accept': 'application/json' } }
+    );
+    if (!response.ok) return '';
+    const data = await response.json();
+    return extractTextFromADF(data.description) || '';
+  } catch (err) {
+    console.warn(`[JiraFetcher] Could not fetch project description for ${projectKey}:`, err.message);
+    return '';
+  }
+}
+
+/**
  * Gọi Jira REST API lấy issue details
  */
 async function fetchIssueDetails(issueKey) {
@@ -92,7 +110,7 @@ async function fetchIssueDetails(issueKey) {
 async function fetchCommentsForIssue(issueKey) {
   try {
     const response = await api.asApp().requestJira(
-      api.route`/rest/api/3/issue/${issueKey}/comment?maxResults=50&orderBy=created`,
+      api.route`/rest/api/3/issue/${issueKey}/comment?maxResults=100&orderBy=created`,
       { method: 'GET', headers: { 'Accept': 'application/json' } }
     );
     if (!response.ok) return [];
@@ -161,6 +179,7 @@ async function fetchTaskDataByKey(issueKey) {
   const fields = issueDetails.fields;
 
   const title = fields.summary || '';
+  const projectKey = issueDetails.key?.split('-')[0] || '';
 
   // Filter "write test case"
   const titleLower = title.toLowerCase();
@@ -187,11 +206,13 @@ async function fetchTaskDataByKey(issueKey) {
 
   // Fetch parent task description + comments (requirements thường update ở đây)
   let parentDescriptionText = '';
+  let parentTitle = '';
   let parentComments = [];
   const parentKey = fields.parent?.key;
   if (parentKey) {
     try {
       const parentDetails = await fetchIssueDetails(parentKey);
+      parentTitle = parentDetails.fields?.summary || '';
       if (parentDetails.fields?.description) {
         parentDescriptionText = extractTextFromADF(parentDetails.fields.description);
       }
@@ -210,6 +231,9 @@ async function fetchTaskDataByKey(issueKey) {
   const allText = [descriptionText, parentDescriptionText, ...mergedComments.map(c => c.body)].join('\n');
   const figmaLinks = extractFigmaLinks(allText);
   console.log(`[JiraFetcher] Found ${figmaLinks.length} Figma link(s)${parentKey ? ` (including parent ${parentKey})` : ''}`);
+
+  const projectDescription = await fetchProjectDescription(projectKey);
+  console.log(`[JiraFetcher] Project description: ${projectDescription ? 'found' : 'empty'}`);
 
   const linkedIssues = (fields.issuelinks || []).map(l => ({
     key: l.inwardIssue?.key || l.outwardIssue?.key || '',
@@ -231,7 +255,11 @@ async function fetchTaskDataByKey(issueKey) {
     issueType: fields.issuetype?.name || 'Story',
     assignee: fields.assignee?.displayName || '',
     reporter: fields.reporter?.displayName || '',
+    parentKey:          parentKey             || '',
+    parentTitle:        parentTitle           || '',
+    parentDescription:  parentDescriptionText || '',
+    projectDescription: projectDescription   || '',
   };
 }
 
-module.exports = { fetchTaskDataByKey, detectPlatform, isValidTransition, extractFigmaLinks };
+module.exports = { fetchTaskDataByKey, detectPlatform, isValidTransition, extractFigmaLinks, fetchProjectDescription };

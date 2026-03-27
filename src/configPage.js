@@ -22,20 +22,23 @@ const KEYS = {
   GOOGLE_SA_JSON: 'google-sa-json',
   SPREADSHEET_ID: 'spreadsheet-id',
   SHARE_EMAILS:   'share-emails',
+  APP_CONTEXT:    'app-context',
 };
 
 const App = () => {
   const [saved, setSaved] = useState(false);
   const [config] = useState(async () => {
-    const [provider, spreadsheetId, shareEmails] = await Promise.all([
+    const [provider, spreadsheetId, shareEmails, appContext] = await Promise.all([
       storage.get(KEYS.AI_PROVIDER),
       storage.get(KEYS.SPREADSHEET_ID),
       storage.get(KEYS.SHARE_EMAILS),
+      storage.get(KEYS.APP_CONTEXT),
     ]);
     return {
       aiProvider:    provider       || 'claude',
       spreadsheetId: spreadsheetId  || '',
       shareEmails:   shareEmails    || '',
+      appContext:    appContext      || '',
     };
   });
 
@@ -43,6 +46,7 @@ const App = () => {
     await storage.set(KEYS.AI_PROVIDER,    formData.aiProvider    || 'claude');
     await storage.set(KEYS.SPREADSHEET_ID, formData.spreadsheetId || '');
     await storage.set(KEYS.SHARE_EMAILS,   formData.shareEmails   || '');
+    await storage.set(KEYS.APP_CONTEXT,    formData.appContext    || '');
 
     if (formData.aiApiKey?.trim())     await storage.setSecret(KEYS.AI_API_KEY,     formData.aiApiKey.trim());
     if (formData.figmaToken?.trim())   await storage.setSecret(KEYS.FIGMA_TOKEN,    formData.figmaToken.trim());
@@ -55,13 +59,13 @@ const App = () => {
     <AdminPage>
       <Heading size="large">AI TestCase Generator — Configuration</Heading>
       <Text>
-        Khi Jira task chuyển trạng thái Open → In Progress, app sẽ tự động
-        generate test cases bằng AI và export ra Google Sheets.
+        When a task/subtask with "write testcase" in the title transitions To Do → In Progress,
+        the app automatically generates test cases using AI and attaches a CSV file to the Jira issue.
       </Text>
 
       {saved && (
-        <SectionMessage appearance="confirmation" title="Đã lưu thành công!">
-          <Text>Cấu hình đã được cập nhật.</Text>
+        <SectionMessage appearance="confirmation" title="Saved successfully!">
+          <Text>Configuration has been updated.</Text>
         </SectionMessage>
       )}
 
@@ -72,11 +76,14 @@ const App = () => {
             <Option label="Claude (Anthropic) — Recommended" value="claude" />
             <Option label="OpenAI (GPT-4o)" value="openai" />
           </Select>
+          <Text>
+            Claude: claude-sonnet-4-6 (max 16,000 output tokens) | OpenAI: gpt-4o (max 16,384 output tokens)
+          </Text>
           <TextField
             name="aiApiKey"
             label="AI API Key"
-            description="Để trống nếu không muốn đổi key cũ."
-            placeholder="sk-ant-... hoặc sk-..."
+            description="Leave blank to keep the existing key."
+            placeholder="sk-ant-... or sk-..."
             type="password"
           />
         </FormSection>
@@ -86,9 +93,23 @@ const App = () => {
           <TextField
             name="figmaToken"
             label="Figma Personal Access Token"
-            description="Để trống nếu không dùng Figma."
+            description="Leave blank if not using Figma."
             placeholder="figd_..."
             type="password"
+          />
+        </FormSection>
+
+        <FormSection>
+          <Heading size="medium">App Context (Per-Project Prompt)</Heading>
+          <Text>
+            Describe your app to help AI generate more accurate test cases. E.g. user types, auth methods, screen IDs, business rules.
+            Leave blank to use a generic prompt.
+          </Text>
+          <TextArea
+            name="appContext"
+            label="App Context"
+            defaultValue={config.appContext}
+            placeholder={`Example:\nApp: E-commerce mobile app (iOS & Android)\nUser types: Guest, Registered User, Admin\nKey flows: Browse → Add to Cart → Checkout → Payment\nPayment methods: Credit Card, PayPal, COD\nSpecial rules: Guest can checkout but must register to track orders`}
           />
         </FormSection>
 
@@ -97,18 +118,18 @@ const App = () => {
           <TextArea
             name="googleSaJson"
             label="Google Service Account JSON"
-            description="Paste nội dung file JSON key. Để trống nếu không muốn đổi."
+            description="Paste the JSON key file contents. Leave blank to keep the existing key."
             placeholder='{"type": "service_account", "project_id": "...", ...}'
           />
           <TextField
             name="spreadsheetId"
             label="Google Spreadsheet ID (Optional)"
             defaultValue={config.spreadsheetId}
-            placeholder="Để trống → app tự tạo sheet mới"
+            placeholder="Leave blank → app creates a new sheet automatically"
           />
           <TextField
             name="shareEmails"
-            label="Auto-share với emails (Optional)"
+            label="Auto-share emails (Optional)"
             defaultValue={config.shareEmails}
             placeholder="qa@company.com, pm@company.com"
           />

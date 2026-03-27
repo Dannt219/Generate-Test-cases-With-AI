@@ -36,7 +36,7 @@ function extractNodeInfo(node, depth = 0) {
   if (node.type === 'TEXT' && node.characters) textContent.push(node.characters.trim());
   const componentTypes = ['FRAME', 'COMPONENT', 'INSTANCE', 'GROUP'];
   if (componentTypes.includes(node.type) && node.name && depth > 0) components.push(node.name);
-  if (node.children && depth < 5) {
+  if (node.children && depth < 8) {
     for (const child of node.children) {
       const c = extractNodeInfo(child, depth + 1);
       components.push(...c.components);
@@ -72,7 +72,7 @@ async function fetchFigmaFile(fileKey, nodeIds, token) {
       const data = await figmaGet(`/files/${fileKey}?depth=2`, token);
       const topFrames = (data.document?.children?.[0]?.children || [])
         .filter(n => n.type === 'FRAME' || n.type === 'COMPONENT')
-        .slice(0, 8);
+        .slice(0, 15);
       if (topFrames.length === 0) return screens;
       const frameIds = topFrames.map(f => f.id).join(',');
       await sleep(200);

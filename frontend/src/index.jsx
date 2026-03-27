@@ -20,7 +20,7 @@ const Badge = ({ ok, label }) => (
     marginLeft: 8,
     verticalAlign: 'middle',
   }}>
-    {ok ? '✓ Đã lưu' : '⚠ Chưa cấu hình'}
+    {ok ? '✓ Saved' : '⚠ Not configured'}
   </span>
 );
 
@@ -29,7 +29,7 @@ const App = () => {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [config, setConfig] = useState({
-    aiProvider: 'claude', spreadsheetId: '', shareEmails: '',
+    aiProvider: 'claude', spreadsheetId: '', shareEmails: '', appContext: '',
     hasAiApiKey: false, hasFigmaToken: false, hasGoogleSaJson: false,
   });
 
@@ -55,31 +55,32 @@ const App = () => {
         googleSaJson:  fd.get('googleSaJson'),
         spreadsheetId: fd.get('spreadsheetId'),
         shareEmails:   fd.get('shareEmails'),
+        appContext:    fd.get('appContext'),
       });
       await loadConfig(); // reload để cập nhật badges
       setSaved(true);
       setTimeout(() => setSaved(false), 4000);
       e.target.reset(); // clear password fields
     } catch (err) {
-      alert('Lỗi khi lưu: ' + err.message);
+      alert('Error saving: ' + err.message);
     }
     setSaving(false);
   };
 
-  if (loading) return <div style={s.loading}>⏳ Đang tải cấu hình...</div>;
+  if (loading) return <div style={s.loading}>⏳ Loading configuration...</div>;
 
   return (
     <div style={s.container}>
       <h1 style={s.h1}>AI TestCase Generator — Configuration</h1>
       <p style={s.desc}>
-        Khi task/subtask có tiêu đề chứa <b>"write testcase"</b> chuyển <b>To Do → In Progress</b>, app tự động generate test cases bằng AI và đính kèm file CSV vào Jira issue.
+        When a task/subtask with <b>"write testcase"</b> in the title transitions <b>To Do → In Progress</b>, the app automatically generates test cases using AI and attaches a CSV file to the Jira issue.
       </p>
 
-      {saved && <div style={s.success}>✅ Lưu thành công! Cấu hình đã được cập nhật.</div>}
+      {saved && <div style={s.success}>✅ Saved successfully! Configuration has been updated.</div>}
 
       {/* Status overview */}
       <div style={s.statusBox}>
-        <b style={{ fontSize: 13 }}>Trạng thái cấu hình:</b>
+        <b style={{ fontSize: 13 }}>Configuration Status:</b>
         <div style={s.statusRow}>
           <span style={s.statusLabel}>AI API Key</span>
           <Badge ok={config.hasAiApiKey} />
@@ -107,6 +108,18 @@ const App = () => {
       </div>
 
       <form onSubmit={handleSubmit}>
+        {/* App Context */}
+        <section style={s.section}>
+          <h2 style={s.h2}>App Context <span style={s.optTag}>Optional</span></h2>
+          <p style={{ fontSize: 12, color: '#6b778c', margin: '0 0 8px' }}>
+            The app automatically reads from <b>Jira Project Description</b>. Add additional context here to improve AI accuracy.
+          </p>
+          <label style={s.label}>Additional App Context</label>
+          <textarea name="appContext" rows={3} style={{ ...s.input, fontFamily: 'inherit', fontSize: 13 }}
+            defaultValue={config.appContext}
+            placeholder="e.g. Fintech app with features: login, money transfer, top-up/withdrawal, transaction history..." />
+        </section>
+
         {/* AI Settings */}
         <section style={s.section}>
           <h2 style={s.h2}>AI Settings</h2>
@@ -122,7 +135,7 @@ const App = () => {
             <Badge ok={config.hasAiApiKey} />
           </label>
           <input type="password" name="aiApiKey" style={s.input}
-            placeholder={config.hasAiApiKey ? '••••••••••••••• (để trống = giữ key cũ)' : 'sk-ant-... hoặc sk-...'} />
+            placeholder={config.hasAiApiKey ? '••••••••••••••• (leave blank to keep existing key)' : 'sk-ant-... or sk-...'} />
           <div style={s.hint}>
             Claude: <code>console.anthropic.com</code> → API Keys &nbsp;|&nbsp;
             OpenAI: <code>platform.openai.com/api-keys</code>
@@ -137,7 +150,7 @@ const App = () => {
             <Badge ok={config.hasFigmaToken} />
           </label>
           <input type="password" name="figmaToken" style={s.input}
-            placeholder={config.hasFigmaToken ? '••••••• (để trống = giữ token cũ)' : 'figd_... (để trống nếu không dùng Figma)'} />
+            placeholder={config.hasFigmaToken ? '••••••• (leave blank to keep existing token)' : 'figd_... (leave blank if not using Figma)'} />
           <div style={s.hint}>Figma → Settings → Security → Personal access tokens</div>
         </section>
 
@@ -145,7 +158,7 @@ const App = () => {
         <section style={s.section}>
           <h2 style={s.h2}>Google Sheets <span style={s.optTag}>Optional</span></h2>
           <p style={{ fontSize: 12, color: '#6b778c', margin: '0 0 8px' }}>
-            Mặc định app đính kèm file CSV vào Jira issue. Điền thêm phần này nếu muốn export đồng thời ra Google Sheets.
+            By default, the app attaches a CSV file to the Jira issue. Fill in this section to also export to Google Sheets.
           </p>
 
           <label style={s.label}>
@@ -154,28 +167,28 @@ const App = () => {
           </label>
           <textarea name="googleSaJson" rows={5} style={{ ...s.input, fontFamily: 'monospace', fontSize: 12 }}
             placeholder={config.hasGoogleSaJson
-              ? '(đã lưu — paste JSON mới để thay thế, hoặc để trống)'
+              ? '(saved — paste new JSON to replace, or leave blank)'
               : '{"type": "service_account", "project_id": "...", ...}'} />
           <div style={s.hint}>Google Cloud Console → IAM → Service Accounts → Keys → Add Key → JSON</div>
 
           <label style={s.label}>Spreadsheet ID <span style={s.optTag}>Optional</span></label>
           <input type="text" name="spreadsheetId" defaultValue={config.spreadsheetId} style={s.input}
             placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms" />
-          <div style={s.hint}>Tạo Google Sheet → Share cho service account email (Editor) → lấy ID từ URL: docs.google.com/spreadsheets/d/<b>[ID]</b>/edit</div>
+          <div style={s.hint}>Create a Google Sheet → Share with service account email (Editor) → copy ID from URL: docs.google.com/spreadsheets/d/<b>[ID]</b>/edit</div>
 
           <label style={s.label}>
             Auto-share emails
             {!config.spreadsheetId
-              ? <span style={{ ...s.optTag, background: '#ffebe6', color: '#bf2600' }}>Bắt buộc khi không có Spreadsheet ID</span>
+              ? <span style={{ ...s.optTag, background: '#ffebe6', color: '#bf2600' }}>Required when no Spreadsheet ID</span>
               : <span style={s.optTag}>Optional</span>}
           </label>
           <input type="text" name="shareEmails" defaultValue={config.shareEmails} style={s.input}
             placeholder="your@email.com, qa@company.com" />
-          <div style={s.hint}>Khi để trống Spreadsheet ID, app tự tạo sheet và share về email này.</div>
+          <div style={s.hint}>When Spreadsheet ID is empty, the app creates a new sheet and shares it to this email.</div>
         </section>
 
         <button type="submit" disabled={saving} style={saving ? { ...s.button, opacity: 0.7 } : s.button}>
-          {saving ? '⏳ Đang lưu...' : '💾 Save Configuration'}
+          {saving ? '⏳ Saving...' : '💾 Save Configuration'}
         </button>
       </form>
     </div>

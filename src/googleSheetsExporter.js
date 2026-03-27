@@ -153,7 +153,7 @@ async function shareSheet(token, spreadsheetId, shareEmails) {
  */
 async function exportToGoogleSheets(issueKey, platform, testCases, config) {
   const { googleSaJson, spreadsheetId: configSpreadsheetId, shareEmails } = config;
-  if (!googleSaJson) throw new Error('Google Service Account JSON chưa được cấu hình.');
+  if (!googleSaJson) throw new Error('Google Service Account JSON is not configured.');
 
   const token = await getAccessToken(googleSaJson);
   const spreadsheetId = await getOrCreateSpreadsheet(token, configSpreadsheetId);

@@ -19,7 +19,7 @@ import { invoke } from '@forge/bridge';
 const App = () => {
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [config, setConfig] = useState({ aiProvider: 'claude', spreadsheetId: '', shareEmails: '' });
+  const [config, setConfig] = useState({ aiProvider: 'claude', spreadsheetId: '', shareEmails: '', appContext: '' });
 
   useEffect(() => {
     invoke('getConfig').then((data) => {
@@ -50,6 +50,21 @@ const App = () => {
       )}
 
       <Form onSubmit={onSubmit} submitButtonText="Save Configuration">
+
+        <FormSection>
+          <Heading as="h2">App Context (Optional)</Heading>
+          <Text>
+            Mô tả ngắn về app/product để AI hiểu context tốt hơn.
+            App sẽ tự động lấy từ Jira Project Description — chỉ cần điền ở đây nếu muốn bổ sung thêm.
+          </Text>
+          <Label labelFor="appContext">Additional App Context</Label>
+          <TextArea
+            name="appContext"
+            id="appContext"
+            defaultValue={config.appContext}
+            placeholder="VD: App fintech cho người dùng Việt Nam, gồm: đăng nhập, chuyển tiền, nạp rút, lịch sử giao dịch..."
+          />
+        </FormSection>
 
         <FormSection>
           <Heading as="h2">AI Settings</Heading>
