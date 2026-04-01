@@ -153,6 +153,13 @@ const App = () => {
           <p style={{ fontSize: 12, color: '#6b778c', margin: '0 0 8px' }}>
             Create a Google Apps Script Web App and paste the URL here. The app will automatically create a new Google Sheet for each task.
           </p>
+          <p style={{ fontSize: 12, margin: '0 0 10px' }}>
+            📖 Setup guide & <code>TestCaseSheetGenerator.gs</code> file:{' '}
+            <a href="https://github.com/Dannt219/Generate-Test-cases-With-AI" target="_blank" rel="noopener noreferrer"
+              style={{ color: '#0052cc', fontWeight: 600 }}>
+              github.com/Dannt219/Generate-Test-cases-With-AI
+            </a>
+          </p>
 
           <label style={s.label}>
             Apps Script URL
