@@ -29,8 +29,8 @@ const App = () => {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [config, setConfig] = useState({
-    aiProvider: 'claude', spreadsheetId: '', shareEmails: '', appContext: '',
-    hasAiApiKey: false, hasFigmaToken: false, hasGoogleSaJson: false,
+    aiProvider: 'claude', appsScriptUrl: '', folderId: '', appContext: '',
+    hasAiApiKey: false, hasFigmaToken: false, hasAppsScriptUrl: false,
   });
 
   const loadConfig = () => {
@@ -52,15 +52,14 @@ const App = () => {
         aiProvider:    fd.get('aiProvider'),
         aiApiKey:      fd.get('aiApiKey'),
         figmaToken:    fd.get('figmaToken'),
-        googleSaJson:  fd.get('googleSaJson'),
-        spreadsheetId: fd.get('spreadsheetId'),
-        shareEmails:   fd.get('shareEmails'),
+        appsScriptUrl: fd.get('appsScriptUrl'),
+        folderId:      fd.get('folderId'),
         appContext:    fd.get('appContext'),
       });
-      await loadConfig(); // reload để cập nhật badges
+      await loadConfig();
       setSaved(true);
       setTimeout(() => setSaved(false), 4000);
-      e.target.reset(); // clear password fields
+      e.target.reset();
     } catch (err) {
       alert('Error saving: ' + err.message);
     }
@@ -73,7 +72,7 @@ const App = () => {
     <div style={s.container}>
       <h1 style={s.h1}>AI TestCase Generator — Configuration</h1>
       <p style={s.desc}>
-        When a task/subtask with <b>"write testcase"</b> in the title transitions <b>To Do → In Progress</b>, the app automatically generates test cases using AI and attaches a CSV file to the Jira issue.
+        When a task/subtask with <b>"write testcase"</b> in the title transitions <b>To Do → In Progress</b>, the app automatically generates test cases using AI and exports to Google Sheets.
       </p>
 
       {saved && <div style={s.success}>✅ Saved successfully! Configuration has been updated.</div>}
@@ -86,25 +85,19 @@ const App = () => {
           <Badge ok={config.hasAiApiKey} />
         </div>
         <div style={s.statusRow}>
-          <span style={s.statusLabel}>Google Service Account</span>
-          <Badge ok={config.hasGoogleSaJson} />
-          {!config.hasGoogleSaJson && <span style={s.optional}>(optional)</span>}
+          <span style={s.statusLabel}>Apps Script URL</span>
+          <Badge ok={config.hasAppsScriptUrl} />
+          {!config.hasAppsScriptUrl && <span style={s.optional}>(optional)</span>}
         </div>
         <div style={s.statusRow}>
           <span style={s.statusLabel}>Figma Token</span>
-          <Badge ok={config.hasFigmaToken} label="Optional" />
+          <Badge ok={config.hasFigmaToken} />
           {!config.hasFigmaToken && <span style={s.optional}>(optional)</span>}
         </div>
         <div style={s.statusRow}>
           <span style={s.statusLabel}>AI Provider</span>
           <span style={s.value}>{config.aiProvider === 'claude' ? 'Claude (Anthropic)' : 'OpenAI (GPT-4o)'}</span>
         </div>
-        {config.spreadsheetId && (
-          <div style={s.statusRow}>
-            <span style={s.statusLabel}>Spreadsheet ID</span>
-            <span style={s.value}>{config.spreadsheetId}</span>
-          </div>
-        )}
       </div>
 
       <form onSubmit={handleSubmit}>
@@ -117,7 +110,7 @@ const App = () => {
           <label style={s.label}>Additional App Context</label>
           <textarea name="appContext" rows={3} style={{ ...s.input, fontFamily: 'inherit', fontSize: 13 }}
             defaultValue={config.appContext}
-            placeholder="e.g. Fintech app with features: login, money transfer, top-up/withdrawal, transaction history..." />
+            placeholder="e.g. EdTech app for Japanese students and parents, features: login, grade selection, lesson booking..." />
         </section>
 
         {/* AI Settings */}
@@ -150,7 +143,7 @@ const App = () => {
             <Badge ok={config.hasFigmaToken} />
           </label>
           <input type="password" name="figmaToken" style={s.input}
-            placeholder={config.hasFigmaToken ? '••••••• (leave blank to keep existing token)' : 'figd_... (leave blank if not using Figma)'} />
+            placeholder={config.hasFigmaToken ? '••••• (leave blank to keep existing token)' : 'figd_... (leave blank if not using Figma)'} />
           <div style={s.hint}>Figma → Settings → Security → Personal access tokens</div>
         </section>
 
@@ -158,33 +151,25 @@ const App = () => {
         <section style={s.section}>
           <h2 style={s.h2}>Google Sheets <span style={s.optTag}>Optional</span></h2>
           <p style={{ fontSize: 12, color: '#6b778c', margin: '0 0 8px' }}>
-            By default, the app attaches a CSV file to the Jira issue. Fill in this section to also export to Google Sheets.
+            Create a Google Apps Script Web App and paste the URL here. The app will automatically create a new Google Sheet for each task.
           </p>
 
           <label style={s.label}>
-            Service Account JSON
-            <Badge ok={config.hasGoogleSaJson} />
+            Apps Script URL
+            <Badge ok={config.hasAppsScriptUrl} />
           </label>
-          <textarea name="googleSaJson" rows={5} style={{ ...s.input, fontFamily: 'monospace', fontSize: 12 }}
-            placeholder={config.hasGoogleSaJson
-              ? '(saved — paste new JSON to replace, or leave blank)'
-              : '{"type": "service_account", "project_id": "...", ...}'} />
-          <div style={s.hint}>Google Cloud Console → IAM → Service Accounts → Keys → Add Key → JSON</div>
+          <input type="text" name="appsScriptUrl" defaultValue={config.appsScriptUrl} style={s.input}
+            placeholder="https://script.google.com/macros/s/.../exec" />
+          <div style={s.hint}>
+            script.google.com → New project → paste <code>TestCaseSheetGenerator.gs</code> → Deploy as Web App (Execute as: Me, Access: Anyone)
+          </div>
 
-          <label style={s.label}>Spreadsheet ID <span style={s.optTag}>Optional</span></label>
-          <input type="text" name="spreadsheetId" defaultValue={config.spreadsheetId} style={s.input}
-            placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms" />
-          <div style={s.hint}>Create a Google Sheet → Share with service account email (Editor) → copy ID from URL: docs.google.com/spreadsheets/d/<b>[ID]</b>/edit</div>
-
-          <label style={s.label}>
-            Auto-share emails
-            {!config.spreadsheetId
-              ? <span style={{ ...s.optTag, background: '#ffebe6', color: '#bf2600' }}>Required when no Spreadsheet ID</span>
-              : <span style={s.optTag}>Optional</span>}
-          </label>
-          <input type="text" name="shareEmails" defaultValue={config.shareEmails} style={s.input}
-            placeholder="your@email.com, qa@company.com" />
-          <div style={s.hint}>When Spreadsheet ID is empty, the app creates a new sheet and shares it to this email.</div>
+          <label style={s.label}>Google Drive Folder ID <span style={s.optTag}>Optional</span></label>
+          <input type="text" name="folderId" defaultValue={config.folderId} style={s.input}
+            placeholder="e.g. 1ABC123xyzFOLDERID (from Drive URL)" />
+          <div style={s.hint}>
+            Leave blank → sheet saved to My Drive. Get ID from: drive.google.com/drive/folders/<b>[FOLDER_ID]</b>
+          </div>
         </section>
 
         <button type="submit" disabled={saving} style={saving ? { ...s.button, opacity: 0.7 } : s.button}>

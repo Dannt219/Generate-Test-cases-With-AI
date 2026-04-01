@@ -48,6 +48,5 @@ permissions:
         - https://api.anthropic.com
         - https://api.openai.com
         - https://api.figma.com
-        - https://sheets.googleapis.com
-        - https://www.googleapis.com
-        - https://oauth2.googleapis.com
+        - https://script.google.com
+        - https://script.googleusercontent.com

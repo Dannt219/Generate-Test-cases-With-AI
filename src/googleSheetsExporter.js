@@ -1,196 +1,146 @@
 const { fetch } = require('@forge/api');
 
-const SHEETS_API = 'https://sheets.googleapis.com/v4/spreadsheets';
-const OAUTH_URL = 'https://oauth2.googleapis.com/token';
-const HEADER_BG = { red: 0.267, green: 0.447, blue: 0.769 }; // #4472C4
-const HEADER_FG = { red: 1, green: 1, blue: 1 };
-
-async function getAccessToken(serviceAccountJson) {
-  const sa = JSON.parse(serviceAccountJson);
-  // Strip markdown link formatting if email was pasted as [email](mailto:email)
-  const clientEmail = (sa.client_email || '').replace(/^\[([^\]]+)\]\([^)]+\)$/, '$1').trim();
-  if (!clientEmail || !clientEmail.includes('@')) {
-    throw new Error(`Invalid client_email in Service Account JSON: "${sa.client_email}". Please re-paste the raw JSON file.`);
-  }
-  const now = Math.floor(Date.now() / 1000);
-  const header = { alg: 'RS256', typ: 'JWT' };
-  const payload = {
-    iss: clientEmail,
-    scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive',
-    aud: OAUTH_URL, iat: now, exp: now + 3600,
-  };
-  const jwt = await createJWT(header, payload, sa.private_key);
-  const res = await fetch(OAUTH_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
-  });
-  if (!res.ok) throw new Error(`Google OAuth error: ${await res.text()}`);
-  return (await res.json()).access_token;
-}
-
-async function createJWT(header, payload, pem) {
-  const b64 = obj => btoa(unescape(encodeURIComponent(JSON.stringify(obj)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-  const input = `${b64(header)}.${b64(payload)}`;
-  const keyData = pemToBuffer(pem);
-  const key = await crypto.subtle.importKey('pkcs8', keyData, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
-  const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(input));
-  const b64Sig = btoa(String.fromCharCode(...new Uint8Array(sig))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
-  return `${input}.${b64Sig}`;
-}
-
-function pemToBuffer(pem) {
-  const b64 = pem.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\n/g, '');
-  const bin = atob(b64);
-  const buf = new ArrayBuffer(bin.length);
-  const view = new Uint8Array(buf);
-  for (let i = 0; i < bin.length; i++) view[i] = bin.charCodeAt(i);
-  return buf;
-}
-
-async function getOrCreateSpreadsheet(token, spreadsheetId) {
-  if (spreadsheetId) {
-    // Accept full URL: extract ID from https://docs.google.com/spreadsheets/d/{ID}/...
-    const match = spreadsheetId.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
-    if (match) return match[1];
-    return spreadsheetId;
-  }
-  // Use Drive API to create spreadsheet (more permissive than Sheets API create)
-  const res = await fetch('https://www.googleapis.com/drive/v3/files', {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      name: 'AI TestCase Generator',
-      mimeType: 'application/vnd.google-apps.spreadsheet',
-    }),
-  });
-  if (!res.ok) throw new Error(`Create spreadsheet failed: ${await res.text()}`);
-  return (await res.json()).id;
-}
-
-async function addSheetTab(token, spreadsheetId, tabName) {
-  const res = await fetch(`${SHEETS_API}/${spreadsheetId}:batchUpdate`, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ requests: [{ addSheet: { properties: { title: tabName } } }] }),
-  });
-  if (!res.ok) {
-    const text = await res.text();
-    if (text.includes('already exists')) return getSheetId(token, spreadsheetId, tabName);
-    throw new Error(`Add sheet tab failed: ${text}`);
-  }
-  return (await res.json()).replies?.[0]?.addSheet?.properties?.sheetId;
-}
-
-async function getSheetId(token, spreadsheetId, tabName) {
-  const res = await fetch(`${SHEETS_API}/${spreadsheetId}?fields=sheets.properties`, {
-    headers: { 'Authorization': `Bearer ${token}` },
-  });
-  const data = await res.json();
-  return data.sheets?.find(s => s.properties.title === tabName)?.properties?.sheetId;
-}
-
-function buildHeaderConfig(platform) {
-  if (platform === 'web') {
-    return {
-      row1: ['#', 'Test case', 'Pre-condition', 'Steps', 'Expected', 'Web', ''],
-      row2: ['', '', '', '', '', 'Actual Result', 'Jira bug'],
-      merges: [{ startColumnIndex: 5, endColumnIndex: 7 }],
-      totalColumns: 7,
-    };
-  }
-  return {
-    row1: ['#', 'Test case', 'Pre-condition', 'Steps', 'Expected', 'Android', '', 'IOS', ''],
-    row2: ['', '', '', '', '', 'Actual Result', 'Jira bug', 'Actual Result', 'Jira bug'],
-    merges: [{ startColumnIndex: 5, endColumnIndex: 7 }, { startColumnIndex: 7, endColumnIndex: 9 }],
-    totalColumns: 9,
-  };
-}
-
-function buildFormatRequests(sheetId, headerConfig, rowCount) {
-  const { merges, totalColumns } = headerConfig;
-  const requests = [];
-  merges.forEach(m => requests.push({
-    mergeCells: { range: { sheetId, startRowIndex: 0, endRowIndex: 1, ...m }, mergeType: 'MERGE_ALL' },
-  }));
-  requests.push({ updateSheetProperties: { properties: { sheetId, gridProperties: { frozenRowCount: 2 } }, fields: 'gridProperties.frozenRowCount' } });
-  requests.push({
-    repeatCell: {
-      range: { sheetId, startRowIndex: 0, endRowIndex: 2, startColumnIndex: 0, endColumnIndex: totalColumns },
-      cell: { userEnteredFormat: { backgroundColor: HEADER_BG, textFormat: { foregroundColor: HEADER_FG, bold: true }, horizontalAlignment: 'CENTER', verticalAlignment: 'MIDDLE', borders: { top: { style: 'SOLID' }, bottom: { style: 'SOLID' }, left: { style: 'SOLID' }, right: { style: 'SOLID' } } } },
-      fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment,verticalAlignment,borders)',
-    },
-  });
-  if (rowCount > 0) {
-    requests.push({
-      repeatCell: {
-        range: { sheetId, startRowIndex: 2, endRowIndex: 2 + rowCount, startColumnIndex: 0, endColumnIndex: totalColumns },
-        cell: { userEnteredFormat: { borders: { top: { style: 'SOLID' }, bottom: { style: 'SOLID' }, left: { style: 'SOLID' }, right: { style: 'SOLID' } }, verticalAlignment: 'TOP', wrapStrategy: 'WRAP' } },
-        fields: 'userEnteredFormat(borders,verticalAlignment,wrapStrategy)',
-      },
-    });
-  }
-  requests.push({ autoResizeDimensions: { dimensions: { sheetId, dimension: 'COLUMNS', startIndex: 0, endIndex: totalColumns } } });
-  return requests;
-}
-
-async function shareSheet(token, spreadsheetId, shareEmails) {
-  const emails = (shareEmails || '').split(',').map(e => e.trim()).filter(Boolean);
-  for (const email of emails) {
-    await fetch(`https://www.googleapis.com/drive/v3/files/${spreadsheetId}/permissions`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'user', role: 'writer', emailAddress: email }),
-    });
-  }
-}
-
 /**
- * @param {string} issueKey
- * @param {string} platform
- * @param {Array} testCases
- * @param {object} config - từ config.js
+ * Export test cases to Google Sheets via Apps Script Web App.
+ *
+ * Strategy: Forge's fetch may not support `redirect: 'manual'`.
+ * Instead, we first do a GET to discover the redirect URL (Apps Script
+ * always redirects to script.googleusercontent.com), then POST the
+ * payload directly to that final URL.
+ *
+ * Fallback: If GET-then-POST doesn't work, try direct POST with
+ * redirect: 'follow' (which converts to GET but Apps Script doGet
+ * can also handle if we pass data as query param — not ideal for
+ * large payloads, so we try POST first).
  */
-async function exportToGoogleSheets(issueKey, platform, testCases, config) {
-  const { googleSaJson, spreadsheetId: configSpreadsheetId, shareEmails } = config;
-  if (!googleSaJson) throw new Error('Google Service Account JSON is not configured.');
+async function exportToGoogleSheets(issueKey, platform, testCases, config, meta = {}) {
+  const { appsScriptUrl, folderId } = config;
+  if (!appsScriptUrl) throw new Error('Apps Script URL is not configured.');
 
-  const token = await getAccessToken(googleSaJson);
-  const spreadsheetId = await getOrCreateSpreadsheet(token, configSpreadsheetId);
-  const isNewSpreadsheet = !configSpreadsheetId;
-  const sheetId = await addSheetTab(token, spreadsheetId, issueKey);
-  const headerConfig = buildHeaderConfig(platform);
-
-  // Ghi header
-  await fetch(`${SHEETS_API}/${spreadsheetId}/values/${encodeURIComponent(issueKey)}!A1:append?valueInputOption=RAW`, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ values: [headerConfig.row1, headerConfig.row2] }),
+  const fileName = `TestCases_${issueKey}_${new Date().toISOString().slice(0, 10)}`;
+  const payload = JSON.stringify({
+    folderId:   folderId || '',
+    fileName,
+    platform,
+    testCases,
+    issueTitle: meta.issueTitle || issueKey,
+    issueUrl:   meta.issueUrl   || '',
+    assignee:   meta.assignee   || '',
   });
 
-  // Ghi data (cột A-E)
-  if (testCases.length > 0) {
-    const rows = testCases.map(tc => [tc.no, tc.testCase, tc.preCondition, tc.steps, tc.expected]);
-    await fetch(`${SHEETS_API}/${spreadsheetId}/values/${encodeURIComponent(issueKey)}!A3:append?valueInputOption=RAW`, {
+  console.log(`[SheetsExporter] Exporting ${testCases.length} test cases for ${issueKey}`);
+  console.log(`[SheetsExporter] Apps Script URL: ${appsScriptUrl}`);
+
+  // Strategy: Try direct POST with redirect:'follow'.
+  // If Forge follows the redirect, POST becomes GET on googleusercontent.com.
+  // Apps Script doGet can handle this IF we also pass data in query param.
+  // But first try: POST directly, see what happens.
+
+  let finalRes;
+  let lastError;
+
+  // ── Attempt 1: Direct POST with redirect:'follow' ──
+  try {
+    console.log('[SheetsExporter] Attempt 1: POST with redirect:follow');
+    finalRes = await fetch(appsScriptUrl, {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ values: rows }),
+      headers: { 'Content-Type': 'application/json' },
+      body: payload,
+      redirect: 'follow',
     });
+    console.log(`[SheetsExporter] Attempt 1 response: ${finalRes.status}`);
+
+    if (finalRes.ok) {
+      const result = await finalRes.json();
+      if (result.success) {
+        console.log(`[SheetsExporter] Done (attempt 1): ${result.url}`);
+        return { url: result.url, spreadsheetId: result.spreadsheetId };
+      }
+    }
+    lastError = `Attempt 1: status ${finalRes.status}`;
+    console.warn(`[SheetsExporter] Attempt 1 failed: ${lastError}`);
+  } catch (err) {
+    lastError = `Attempt 1: ${err.message}`;
+    console.warn(`[SheetsExporter] ${lastError}`);
   }
 
-  // Apply formatting
-  const formatReqs = buildFormatRequests(sheetId, headerConfig, testCases.length);
-  await fetch(`${SHEETS_API}/${spreadsheetId}:batchUpdate`, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ requests: formatReqs }),
-  });
+  // ── Attempt 2: Manual redirect - POST, read Location, re-POST ──
+  try {
+    console.log('[SheetsExporter] Attempt 2: POST with redirect:manual');
+    const res1 = await fetch(appsScriptUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: payload,
+      redirect: 'manual',
+    });
+    console.log(`[SheetsExporter] Attempt 2 step 1: ${res1.status}`);
 
-  await shareSheet(token, spreadsheetId, shareEmails);
+    if (res1.status >= 300 && res1.status < 400) {
+      const redirectUrl = res1.headers.get('location');
+      console.log(`[SheetsExporter] Redirect to: ${redirectUrl}`);
+      if (redirectUrl) {
+        const res2 = await fetch(redirectUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: payload,
+        });
+        console.log(`[SheetsExporter] Attempt 2 step 2: ${res2.status}`);
+        if (res2.ok) {
+          const result = await res2.json();
+          if (result.success) {
+            console.log(`[SheetsExporter] Done (attempt 2): ${result.url}`);
+            return { url: result.url, spreadsheetId: result.spreadsheetId };
+          }
+        }
+        const errText = await res2.text();
+        lastError = `Attempt 2 step 2: status ${res2.status}, body: ${errText.slice(0, 200)}`;
+      }
+    } else if (res1.ok) {
+      const result = await res1.json();
+      if (result.success) {
+        console.log(`[SheetsExporter] Done (attempt 2 direct): ${result.url}`);
+        return { url: result.url, spreadsheetId: result.spreadsheetId };
+      }
+    } else {
+      const errText = await res1.text();
+      lastError = `Attempt 2 step 1: status ${res1.status}, body: ${errText.slice(0, 200)}`;
+    }
+    console.warn(`[SheetsExporter] ${lastError}`);
+  } catch (err) {
+    lastError = `Attempt 2: ${err.message}`;
+    console.warn(`[SheetsExporter] ${lastError}`);
+  }
 
-  const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit#gid=${sheetId}`;
-  console.log(`[SheetsExporter] Done: ${url}`);
-  return { url, spreadsheetId, isNewSpreadsheet };
+  // ── Attempt 3: GET with payload as base64 query param ──
+  try {
+    console.log('[SheetsExporter] Attempt 3: GET with data in query param');
+    const encoded = Buffer.from(payload).toString('base64');
+    const getUrl = `${appsScriptUrl}?data=${encodeURIComponent(encoded)}`;
+    const res3 = await fetch(getUrl, {
+      method: 'GET',
+      redirect: 'follow',
+    });
+    console.log(`[SheetsExporter] Attempt 3 response: ${res3.status}`);
+    if (res3.ok) {
+      const text = await res3.text();
+      // Try to parse as JSON (skip any HTML)
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const result = JSON.parse(jsonMatch[0]);
+        if (result.success) {
+          console.log(`[SheetsExporter] Done (attempt 3): ${result.url}`);
+          return { url: result.url, spreadsheetId: result.spreadsheetId };
+        }
+      }
+    }
+    lastError = `Attempt 3: status ${res3.status}`;
+    console.warn(`[SheetsExporter] ${lastError}`);
+  } catch (err) {
+    lastError = `Attempt 3: ${err.message}`;
+    console.warn(`[SheetsExporter] ${lastError}`);
+  }
+
+  throw new Error(`All export attempts failed. Last: ${lastError}`);
 }
 
-module.exports = { exportToGoogleSheets, buildHeaderConfig };
+module.exports = { exportToGoogleSheets };

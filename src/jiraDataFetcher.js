@@ -8,9 +8,7 @@ const api = require('@forge/api');
  */
 function detectPlatform(title) {
   if (!title) return 'mobile';
-  const lowerTitle = title.toLowerCase();
-  if (lowerTitle.startsWith('[cms]')) return 'web';
-  if (lowerTitle.startsWith('[android]') || lowerTitle.startsWith('[ios]')) return 'mobile';
+  if (title.toLowerCase().includes('[cms]')) return 'web';
   return 'mobile';
 }
 
@@ -241,6 +239,13 @@ async function fetchTaskDataByKey(issueKey) {
     type: l.type?.name || '',
   }));
 
+  // Extract site base URL from the issue's self link (e.g. https://site.atlassian.net/rest/...)
+  let siteUrl = '';
+  try {
+    const selfUrl = new URL(issueDetails.self || '');
+    siteUrl = selfUrl.origin; // e.g. https://lumiaidan01.atlassian.net
+  } catch (_) {}
+
   return {
     issueKey,
     title,
@@ -259,6 +264,7 @@ async function fetchTaskDataByKey(issueKey) {
     parentTitle:        parentTitle           || '',
     parentDescription:  parentDescriptionText || '',
     projectDescription: projectDescription   || '',
+    siteUrl,
   };
 }
 

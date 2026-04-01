@@ -13,13 +13,16 @@ import {
   SectionMessage,
   Text,
   Heading,
+  Link,
 } from '@forge/react';
 import { invoke } from '@forge/bridge';
+
+const DOCS_URL = 'https://gist.github.com/Aidan-castalk/c8d4f1a867e19fbe0430979216e352a2';
 
 const App = () => {
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [config, setConfig] = useState({ aiProvider: 'claude', spreadsheetId: '', shareEmails: '', appContext: '' });
+  const [config, setConfig] = useState({ aiProvider: 'claude', appsScriptUrl: '', folderId: '', shareEmails: '', appContext: '' });
 
   useEffect(() => {
     invoke('getConfig').then((data) => {
@@ -39,8 +42,11 @@ const App = () => {
     <Fragment>
       <Heading as="h1">AI TestCase Generator — Configuration</Heading>
       <Text>
-        Khi Jira task chuyển trạng thái Open → In Progress, app sẽ tự động
+        Khi Jira task chuyển trạng thái sang In Progress, app sẽ tự động
         generate test cases bằng AI và export ra Google Sheets.
+      </Text>
+      <Text>
+        📖 <Link href={DOCS_URL} openNewTab={true}>Full Documentation & Setup Guide</Link>
       </Text>
 
       {saved && (
@@ -53,16 +59,13 @@ const App = () => {
 
         <FormSection>
           <Heading as="h2">App Context (Optional)</Heading>
-          <Text>
-            Mô tả ngắn về app/product để AI hiểu context tốt hơn.
-            App sẽ tự động lấy từ Jira Project Description — chỉ cần điền ở đây nếu muốn bổ sung thêm.
-          </Text>
+          <Text>Mô tả ngắn về app/product để AI hiểu context tốt hơn.</Text>
           <Label labelFor="appContext">Additional App Context</Label>
           <TextArea
             name="appContext"
             id="appContext"
             defaultValue={config.appContext}
-            placeholder="VD: App fintech cho người dùng Việt Nam, gồm: đăng nhập, chuyển tiền, nạp rút, lịch sử giao dịch..."
+            placeholder="VD: EdTech app cho học sinh và phụ huynh Nhật Bản, gồm: đăng ký, đăng nhập, chọn khối lớp..."
           />
         </FormSection>
 
@@ -96,28 +99,27 @@ const App = () => {
 
         <FormSection>
           <Heading as="h2">Google Sheets</Heading>
-          <Label labelFor="googleSaJson">Google Service Account JSON</Label>
-          <TextArea
-            name="googleSaJson"
-            id="googleSaJson"
-            placeholder='{"type": "service_account", "project_id": "...", ...}'
+          <Text>
+            Tạo Google Apps Script Web App và paste URL vào đây.
+            Hướng dẫn: script.google.com → New project → paste script → Deploy as Web App.
+          </Text>
+
+          <Label labelFor="appsScriptUrl">Apps Script URL</Label>
+          <TextField
+            name="appsScriptUrl"
+            id="appsScriptUrl"
+            defaultValue={config.appsScriptUrl}
+            placeholder="https://script.google.com/macros/s/.../exec"
           />
 
-          <Label labelFor="spreadsheetId">Google Spreadsheet ID (Optional)</Label>
+          <Label labelFor="folderId">Google Drive Folder ID (Optional)</Label>
           <TextField
-            name="spreadsheetId"
-            id="spreadsheetId"
-            defaultValue={config.spreadsheetId}
-            placeholder="Để trống → app tự tạo sheet mới"
+            name="folderId"
+            id="folderId"
+            defaultValue={config.folderId}
+            placeholder="Lấy từ URL Drive: drive.google.com/drive/folders/FOLDER_ID"
           />
-
-          <Label labelFor="shareEmails">Auto-share với emails (Optional)</Label>
-          <TextField
-            name="shareEmails"
-            id="shareEmails"
-            defaultValue={config.shareEmails}
-            placeholder="qa@company.com, pm@company.com"
-          />
+          <Text>Để trống → sheet được tạo trong My Drive của tài khoản deploy script.</Text>
         </FormSection>
 
       </Form>
