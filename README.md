@@ -1,160 +1,134 @@
-# Jira AI TestCase Generator — Forge App
+# AI TestCase Generator — Jira App
 
-Tự động generate test cases bằng AI khi Jira task chuyển trạng thái **Open → In Progress**.
-Test cases được export ra **Google Sheets** theo template của team và comment link về Jira task.
+Tự động generate test cases bằng AI khi Jira task chuyển trạng thái **To Do → In Progress**.
+Test cases được export ra **Google Sheets** và đính kèm CSV vào Jira task.
 
 ---
 
 ## Cách hoạt động
 
-```
-Jira task: Open → In Progress
-    ↓
-[Forge Trigger] Nhận event jira:issue:updated
-    ↓
-[Jira Data Fetcher] Lấy summary, description, AC
-                    + comments từ task VÀ tất cả subtasks (merged, cũ→mới)
-                    + extract Figma links từ description/comments
-    ↓  (detect platform từ title prefix)
-[Figma Fetcher] Gọi Figma API lấy screen names, components, text content
-                (skip nếu không có Figma link — graceful degradation)
-    ↓
-[AI Generator] Claude/OpenAI generate test cases
-               Context: Jira data + Comments + Figma design
-    ↓
-[Google Sheets Exporter] Export theo template (Web hoặc Mobile variant)
-    ↓
-Comment link Google Sheets vào Jira task
-```
+1. Tạo task/subtask có title chứa **"write testcase"** hoặc **"write test case"**
+2. Chuyển task sang **In Progress**
+3. App tự động generate test cases từ description, acceptance criteria, comments và Figma (nếu có)
+4. Kết quả được comment vào task: link Google Sheets + file CSV đính kèm
 
 ### Platform Detection
-| Prefix trong title | Variant Google Sheets |
-|--------------------|-----------------------|
-| `[CMS]` | Web: # / Test case / Pre-condition / Steps / Expected / **Web** (Actual, Bug) |
-| `[Android]` hoặc `[IOS]` | Mobile: ... / **Android** (Actual, Bug) / **IOS** (Actual, Bug) |
-| Không có prefix | Mobile (default) |
+
+| Prefix trong title | Format Google Sheets |
+|--------------------|----------------------|
+| `[CMS]` | Web (Actual Result, Jira bug) |
+| Không có prefix | Mobile (Android + IOS) |
 
 ---
 
 ## Cài đặt
 
-### 1. Cài Forge CLI
+### Bước 1 — Cài Jira App
 
-```bash
-npm install -g @forge/cli
-forge login
-```
+Cài app vào Jira site từ Atlassian Marketplace.
 
-### 2. Clone và cài dependencies
+### Bước 2 — Tạo Google Apps Script Web App
 
-```bash
-git clone <repo-url>
-cd jira-ai-testcase-generator
-npm install
-```
+Đây là bước bắt buộc để app tạo được Google Sheet tự động.
 
-### 3. Setup Google Service Account
+#### 2.1 Tạo project
 
-1. Vào [Google Cloud Console](https://console.cloud.google.com)
-2. Tạo project mới hoặc dùng project có sẵn
-3. Enable **Google Sheets API** và **Google Drive API**
-4. Tạo **Service Account**: IAM & Admin → Service Accounts → Create
-5. Tạo key JSON: Service Account → Keys → Add Key → JSON
-6. Lưu file JSON key (sẽ dùng ở bước config env vars)
+1. Truy cập [script.google.com](https://script.google.com)
+2. Click **New project** → đặt tên, ví dụ: `TestCase Sheet Generator`
 
-### 4. Config Environment Variables
+#### 2.2 Paste script
 
-```bash
-# AI API Key (chọn Claude hoặc OpenAI)
-forge variables set AI_API_KEY --encrypt
-# → Nhập API key của Claude (Anthropic) hoặc OpenAI
+1. Xóa code mặc định trong editor
+2. Vào repo này → mở file [`apps-script/TestCaseSheetGenerator.gs`](apps-script/TestCaseSheetGenerator.gs) → copy toàn bộ nội dung → paste vào editor
 
-# AI Provider (mặc định: claude)
-forge variables set AI_PROVIDER
-# → Nhập: claude  hoặc  openai
+#### 2.3 Authorize (bắt buộc)
 
-# Google Service Account JSON (paste toàn bộ nội dung file JSON key)
-forge variables set GOOGLE_SERVICE_ACCOUNT_JSON --encrypt
-# → Paste toàn bộ nội dung file JSON key của Service Account
+1. Trong editor, chọn function **`_testLocally`** từ dropdown
+2. Click **▶ Run**
+3. Popup xuất hiện → **Review permissions** → chọn tài khoản Google → **Allow**
 
-# Google Spreadsheet ID (optional — nếu muốn dùng sheet có sẵn)
-forge variables set SPREADSHEET_ID
-# → Lấy từ URL: https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit
+#### 2.4 Deploy thành Web App
 
-# Figma Personal Access Token (tạo tại figma.com/settings → Personal access tokens)
-forge variables set FIGMA_ACCESS_TOKEN --encrypt
-# → Nhập Figma Personal Access Token
+1. Click **Deploy** → **New deployment**
+2. Click icon ⚙️ → chọn **Web app**
+3. Cấu hình:
+   - **Execute as:** `Me`
+   - **Who has access:** `Anyone`
+4. Click **Deploy** → copy **Web App URL**
 
-# Danh sách email để auto-share sheet (phân cách bằng dấu phẩy)
-forge variables set SHARE_EMAILS
-# → Ví dụ: qa1@company.com,qa2@company.com,pm@company.com
-```
+> Mỗi lần sửa code cần **Deploy → New deployment** mới để cập nhật.
 
-### 5. Deploy lên Jira Cloud
+#### 2.5 Chuẩn bị Google Drive Folder (tùy chọn)
 
-```bash
-# Tạo app mới (lần đầu)
-forge create
-# → Chọn template: Basic trigger
-# → Đặt tên app
+Nếu muốn sheet được tạo vào folder riêng:
 
-# Deploy
-forge deploy
+1. Mở folder trên Google Drive
+2. Lấy **Folder ID** từ URL:
+   ```
+   https://drive.google.com/drive/folders/1ABC123xyzFOLDERID
+                                           ↑ đây là Folder ID
+   ```
+3. Đảm bảo tài khoản Google dùng để deploy script có quyền **Editor** trên folder
 
-# Install vào Jira site
-forge install
-# → Chọn: Jira
-# → Nhập URL site: castalk.atlassian.net
-# → Chọn project: AIEDU (hoặc All projects)
-```
+> Nếu để trống, sheet được tạo trong **My Drive**.
 
 ---
 
-## Test
+### Bước 3 — Cấu hình trong Jira
 
-### Chạy unit tests
+Vào **Jira Settings → Apps → AI TestCase Generator**:
 
-```bash
-npm test
-```
+| Field | Bắt buộc | Mô tả |
+|-------|----------|-------|
+| AI Provider | ✅ | Claude (Anthropic) hoặc OpenAI |
+| AI API Key | ✅ | API key của provider đã chọn |
+| Apps Script URL | ✅ | URL Web App từ bước 2.4 |
+| Google Drive Folder ID | ❌ | ID folder (để trống → lưu vào My Drive) |
+| Figma Token | ❌ | Personal Access Token của Figma |
+| App Context | ❌ | Mô tả ngắn về sản phẩm để AI hiểu context |
 
-### Test trên local với forge tunnel
-
-```bash
-# Mở tunnel để nhận webhook từ Jira
-forge tunnel
-
-# Sau đó vào Jira và chuyển trạng thái 1 task từ Open → In Progress
-# Xem logs trực tiếp trong terminal
-```
-
-### Xem logs trên Forge Developer Console
-
-1. Vào [developer.atlassian.com/console/forge](https://developer.atlassian.com/console/forge)
-2. Chọn app **AI TestCase Generator**
-3. Chọn **Logs** → xem real-time logs
+**Lấy AI API Key:**
+- Claude: [console.anthropic.com](https://console.anthropic.com) → API Keys
+- OpenAI: [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
 
 ---
 
-## Cấu trúc Project
+## Sử dụng
 
-```
-jira-ai-testcase-generator/
-├── manifest.yml              # Forge app config — trigger + permissions
-├── package.json
-├── README.md
-└── src/
-    ├── index.js              # Main trigger handler — kết nối tất cả modules
-    ├── jiraDataFetcher.js    # Lấy dữ liệu Jira, comments task+subtasks, extract Figma links
-    ├── figmaFetcher.js       # Gọi Figma API lấy screen/component/text data
-    ├── aiGenerator.js        # Gọi AI API (Claude/OpenAI) với 3 nguồn context
-    ├── googleSheetsExporter.js # Export test cases ra Google Sheets
-    └── __tests__/
-        ├── jiraDataFetcher.test.js
-        ├── figmaFetcher.test.js
-        ├── aiGenerator.test.js
-        ├── googleSheetsExporter.test.js
-        └── mockData.js       # Sample payloads: Jira event, comments, Figma data
+1. Tạo task hoặc subtask, đặt title có chứa `write testcase` hoặc `write test case`
+   - Ví dụ: `[CMS] Write testcase — Email Template`
+   - Ví dụ: `Write testcase — Login flow`
+2. Điền description, acceptance criteria, comments đầy đủ càng tốt
+3. Chuyển task sang **In Progress**
+4. Sau 30–60 giây, kiểm tra comment trong task — sẽ có:
+   - Link Google Sheets
+   - File CSV đính kèm
+
+---
+
+## Format Google Sheet
+
+### Metadata (rows 1–9)
+
+| Field | Nội dung |
+|-------|----------|
+| Module | Title của Jira task |
+| Test requirement | Link Jira task |
+| Tester | Assignee của task |
+| Reviewer | Điền thủ công |
+| Status | Điền thủ công |
+| Bảng thống kê | In-sprint / Mainflow / Automation × OK / NG / Untest / Blocked |
+
+### Cột test cases
+
+| # | Test case | Pre-condition | Steps | Expected | Platform columns | In Sprint | Regression test | Priority | LLM | Automatable |
+
+---
+
+## Xem logs
+
+```bash
+forge logs --environment production
 ```
 
 ---
@@ -163,8 +137,8 @@ jira-ai-testcase-generator/
 
 | Lỗi | Nguyên nhân | Giải pháp |
 |-----|-------------|-----------|
-| `AI_API_KEY is not set` | Chưa set env var | `forge variables set AI_API_KEY --encrypt` |
-| `GOOGLE_SERVICE_ACCOUNT_JSON is not set` | Chưa set env var | Set giá trị JSON key |
-| `Failed to create spreadsheet` | Service Account thiếu quyền | Enable Google Sheets API + Drive API |
-| `No JSON array found in AI response` | AI trả về format sai | Retry tự động (max 3 lần); kiểm tra prompt |
-| App không trigger | Transition không đúng | Kiểm tra fromStatus/toStatus trong code |
+| Không có comment sau khi chuyển In Progress | Title không chứa "write testcase" | Đổi title task |
+| `AI API Key is not configured` | Chưa điền AI API Key | Vào Settings → điền API Key → Save |
+| `Apps Script HTTP error: 403` | Script chưa authorize | Chạy `_testLocally` trong editor → Allow → New deployment |
+| Google Sheets không tạo được | Script chưa authorize hoặc URL sai | Tạo New deployment → copy URL mới → paste vào Settings |
+| Figma rate limit (429) | Quá nhiều request | Tự động retry 3 lần; nếu vẫn fail thì skip Figma, AI vẫn generate từ description |
