@@ -156,7 +156,8 @@ const App = () => {
           <p style={{ fontSize: 12, margin: '0 0 10px' }}>
             📖 Setup guide & <code>TestCaseSheetGenerator.gs</code> file:{' '}
             <a href="https://github.com/Dannt219/Generate-Test-cases-With-AI" target="_blank" rel="noopener noreferrer"
-              style={{ color: '#0052cc', fontWeight: 600 }}>
+              style={{ color: '#0052cc', fontWeight: 600, cursor: 'pointer' }}
+              onClick={(e) => { e.preventDefault(); window.open('https://github.com/Dannt219/Generate-Test-cases-With-AI', '_blank'); }}>
               github.com/Dannt219/Generate-Test-cases-With-AI
             </a>
           </p>
