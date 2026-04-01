@@ -17,7 +17,7 @@ No manual input required — the app reads your Jira task, fetches Figma designs
    - Fetches Figma design screens (if a Figma link is present)
    - Calls the AI to generate test cases in multiple batches
    - Attaches a CSV file to the Jira issue
-   - (Optional) Exports to Google Sheets
+   - (Optional) Exports to Google Sheets with a clickable link in the Jira comment
 
 ---
 
@@ -64,9 +64,73 @@ Go to **Jira Settings → Apps → AI TestCase Generator** to configure:
 - Get token at: Figma → Settings → Security → Personal access tokens
 
 ### Google Sheets (Optional)
-- **Service Account JSON** — Google Cloud service account credentials
-- **Spreadsheet ID** — existing sheet to export to (leave empty to auto-create)
-- **Auto-share emails** — emails to share the sheet with after export
+
+Google Sheets integration allows the app to export formatted test cases to a Google Sheet and post a clickable link back to the Jira issue.
+
+#### Step 1: Create a Google Cloud Service Account
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project (or select an existing one)
+3. **Enable APIs** — Go to **APIs & Services → Library**, search for and enable:
+   - **Google Sheets API**
+   - **Google Drive API**
+4. Go to **IAM & Admin → Service Accounts** (or visit `https://console.cloud.google.com/iam-admin/serviceaccounts`)
+5. Click **"+ Create Service Account"**
+   - Name: e.g. `testcase-sheets-writer`
+   - Click **Create and Continue** → **Done**
+6. Click on the service account you just created
+7. Go to the **Keys** tab → **Add Key** → **Create new key** → select **JSON** → **Create**
+8. A `.json` file will be downloaded — this is your **Service Account JSON**
+
+> **Important**: The JSON file looks like this:
+> ```json
+> {
+>   "type": "service_account",
+>   "project_id": "your-project-id",
+>   "private_key_id": "...",
+>   "private_key": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n",
+>   "client_email": "testcase-sheets-writer@your-project.iam.gserviceaccount.com",
+>   ...
+> }
+> ```
+> Copy the **entire contents** of this file and paste it into the **"Google Service Account JSON"** field in the app settings.
+
+#### Step 2: Set Up the Spreadsheet ID
+
+You have two options:
+
+**Option A: Use an existing spreadsheet (Recommended)**
+1. Go to [sheets.google.com](https://sheets.google.com) and create a new blank spreadsheet
+2. Click **Share** → add the service account email (the `client_email` from your JSON file, e.g. `testcase-sheets-writer@your-project.iam.gserviceaccount.com`) → set permission to **Editor**
+3. Copy the **Spreadsheet ID** from the URL:
+   ```
+   https://docs.google.com/spreadsheets/d/[THIS_IS_THE_SPREADSHEET_ID]/edit
+   ```
+4. Paste this ID into the **"Google Spreadsheet ID"** field in the app settings
+
+**Option B: Auto-create**
+- Leave the **Spreadsheet ID** field empty
+- The app will automatically create a new spreadsheet on the first run
+- **Note**: This requires the Google Cloud project to have billing enabled
+
+> **Tip**: Option A is recommended because it gives you full control over sharing and avoids potential permission issues.
+
+#### Step 3: Auto-Share Emails (Optional)
+
+Enter a comma-separated list of email addresses to automatically share the spreadsheet with after export:
+
+```
+qa-team@company.com, pm@company.com, tech-lead@company.com
+```
+
+Each email will be granted **Editor** access to the spreadsheet.
+
+#### How It Works
+
+- Each Jira issue gets its own **tab** (sheet) within the spreadsheet, named after the issue key (e.g. `PROJ-123`)
+- The spreadsheet ID is saved after the first run, so all subsequent test cases are consolidated in the same spreadsheet
+- A **clickable smart link** to the Google Sheet is posted as a comment on the Jira issue
+- Headers are formatted with colors, frozen rows, and merged cells matching your platform (Web or Mobile)
 
 ---
 
@@ -128,14 +192,16 @@ The app triggers in two scenarios:
 
 - Jira Cloud (any plan)
 - API key from Anthropic (console.anthropic.com) or OpenAI (platform.openai.com)
+- (Optional) Google Cloud project with Sheets API & Drive API enabled for Google Sheets export
 
 ---
 
 ## Privacy & Security
 
-- API keys are stored securely using Forge encrypted storage
+- API keys and Service Account credentials are stored securely using Forge encrypted storage
 - No personal user data is collected or stored
 - Task data is sent to your chosen AI provider (Anthropic or OpenAI) for processing
+- Google Sheets data is managed through your own Google Cloud service account
 - See full privacy statement: https://gist.github.com/Aidan-castalk/b1500c80966782d72bef1c7632d71dc8
 
 ---

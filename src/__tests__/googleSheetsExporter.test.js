@@ -1,8 +1,8 @@
-const { buildHeaderRows } = require('../googleSheetsExporter');
+const { buildHeaderConfig } = require('../googleSheetsExporter');
 
-describe('buildHeaderRows', () => {
+describe('buildHeaderConfig', () => {
   describe('platform = "mobile"', () => {
-    const config = buildHeaderRows('mobile');
+    const config = buildHeaderConfig('mobile');
 
     test('Row 1 has correct headers', () => {
       expect(config.row1[0]).toBe('#');
@@ -33,7 +33,7 @@ describe('buildHeaderRows', () => {
   });
 
   describe('platform = "web"', () => {
-    const config = buildHeaderRows('web');
+    const config = buildHeaderConfig('web');
 
     test('Row 1 has Web header', () => {
       expect(config.row1[5]).toBe('Web');
@@ -56,7 +56,7 @@ describe('buildHeaderRows', () => {
 
   describe('Default platform', () => {
     test('Unknown platform defaults to mobile layout', () => {
-      const config = buildHeaderRows('unknown');
+      const config = buildHeaderConfig('unknown');
       expect(config.totalColumns).toBe(9);
       expect(config.row1[5]).toBe('Android');
     });
