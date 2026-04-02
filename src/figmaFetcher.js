@@ -7,7 +7,7 @@ function figmaHeaders(token) {
   return { 'X-Figma-Token': token };
 }
 
-async function figmaGet(path, token, retries = 3) {
+async function figmaGet(path, token, retries = 5) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     const response = await fetch(`${FIGMA_API_BASE}${path}`, {
       method: 'GET',
@@ -15,7 +15,9 @@ async function figmaGet(path, token, retries = 3) {
     });
     if (response.status === 429) {
       if (attempt < retries) {
-        const wait = attempt * 2000;
+        const retryAfterSec = parseInt(response.headers?.get?.('Retry-After') || '0', 10);
+        const backoff = Math.pow(2, attempt) * 3000;
+        const wait = Math.min(retryAfterSec > 0 ? retryAfterSec * 1000 : backoff, 30000);
         console.warn(`[FigmaFetcher] Rate limit hit, retrying in ${wait}ms (attempt ${attempt}/${retries})`);
         await sleep(wait);
         continue;

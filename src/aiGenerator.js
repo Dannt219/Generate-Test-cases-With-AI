@@ -95,19 +95,19 @@ function buildPrompt(taskData, figmaData, batch, config) {
     platform, priority, issueType,
   } = taskData;
 
-  const hasFigma    = figmaData && figmaData.screens && figmaData.screens.length > 0;
+  const hasFigma = figmaData && figmaData.screens && figmaData.screens.length > 0;
   const hasComments = allComments && allComments.length > 0;
-  const isMobile    = platform === 'mobile';
-  const descLower   = (title + ' ' + (description || '') + ' ' + (parentDescription || '')).toLowerCase();
-  const hasOtp      = /\botp\b|one.time.pass|verification code|sms code/.test(descLower);
+  const isMobile = platform === 'mobile';
+  const descLower = (title + ' ' + (description || '') + ' ' + (parentDescription || '')).toLowerCase();
+  const hasOtp = /\botp\b|one.time.pass|verification code|sms code/.test(descLower);
 
   let prompt = `You are a Test Lead with 10+ years of experience in mobile and web QA.\n`;
   prompt += `Your job: produce a complete, production-ready test case suite. Coverage drives quantity — do NOT stop early.\n\n`;
 
   // App context: ưu tiên Jira project description, fallback về manual config
   const projectDesc = taskData.projectDescription?.trim() || '';
-  const manualCtx   = config.appContext?.trim() || '';
-  const appContext  = projectDesc || manualCtx;
+  const manualCtx = config.appContext?.trim() || '';
+  const appContext = projectDesc || manualCtx;
   if (appContext) {
     prompt += `## App Context\n${appContext}\n`;
     if (projectDesc && manualCtx) {
@@ -145,7 +145,7 @@ function buildPrompt(taskData, figmaData, batch, config) {
     prompt += `## Linked Issues\n${linkedIssues.map(l => `- ${l.key} (${l.type}): ${l.summary}`).join('\n')}\n\n`;
   }
   if (hasComments) prompt += formatCommentsContext(allComments) + '\n';
-  if (hasFigma)    prompt += formatFigmaContext(figmaData) + '\n';
+  if (hasFigma) prompt += formatFigmaContext(figmaData) + '\n';
 
   // STEP 1 — Analysis
   prompt += `## STEP 1 — REQUIREMENT ANALYSIS (do this mentally before writing)\n`;
@@ -260,6 +260,7 @@ function buildPrompt(taskData, figmaData, batch, config) {
 // ───────── API callers ─────────
 
 async function callClaudeAPI(prompt, apiKey) {
+  // Try non-streaming first — more reliable in Forge's sandboxed fetch
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -269,14 +270,47 @@ async function callClaudeAPI(prompt, apiKey) {
     },
     body: JSON.stringify({
       model: 'claude-sonnet-4-6',
-      max_tokens: 16000,
+      max_tokens: 7000,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: prompt }],
     }),
   });
   if (!response.ok) throw new Error(`Claude API error ${response.status}: ${await response.text()}`);
-  const data = await response.json();
-  return data.content?.[0]?.text || '';
+
+  const rawBody = await response.text();
+  console.log(`[AIGenerator] Claude response length: ${rawBody.length}`);
+  console.log(`[AIGenerator] Claude response preview: ${rawBody.slice(0, 500)}`);
+
+  // Case 1: Regular JSON response (non-streaming)
+  try {
+    const data = JSON.parse(rawBody);
+    if (data.content?.[0]?.text) {
+      console.log(`[AIGenerator] Parsed as regular JSON. Text length: ${data.content[0].text.length}`);
+      return data.content[0].text;
+    }
+  } catch { /* not regular JSON, try SSE */ }
+
+  // Case 2: SSE streaming response
+  let fullText = '';
+  for (const line of rawBody.split('\n')) {
+    if (!line.startsWith('data: ')) continue;
+    const chunk = line.slice(6).trim();
+    if (!chunk || chunk === '[DONE]') continue;
+    try {
+      const event = JSON.parse(chunk);
+      if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
+        fullText += event.delta.text;
+      }
+    } catch { /* skip malformed SSE event */ }
+  }
+
+  if (fullText.length > 0) {
+    console.log(`[AIGenerator] Parsed as SSE. Text length: ${fullText.length}`);
+    return fullText;
+  }
+
+  // Case 3: Neither worked — throw with raw preview for debugging
+  throw new Error(`Claude returned unexpected format. Preview: ${rawBody.slice(0, 300)}`);
 }
 
 async function callOpenAIAPI(prompt, apiKey) {
@@ -292,7 +326,7 @@ async function callOpenAIAPI(prompt, apiKey) {
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: prompt },
       ],
-      max_tokens: 16384,
+      max_tokens: 16000,
       temperature: 0.3,
     }),
   });
@@ -304,38 +338,76 @@ async function callOpenAIAPI(prompt, apiKey) {
 // ───────── JSON parser ─────────
 
 function parseAndValidateTestCases(rawText) {
+  console.log(`[AIGenerator] Raw AI text length: ${rawText.length}`);
+  console.log(`[AIGenerator] Raw AI preview: ${rawText.slice(0, 300)}`);
+
   // Xử lý trường hợp AI bọc trong markdown code block
   let cleaned = rawText.trim();
-  const fenceMatch = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/);
+
+  // Remove markdown fences — handle both ```json ... ``` and ``` ... ```
+  // Use greedy match to capture everything between first ``` and last ```
+  const fenceMatch = cleaned.match(/```(?:json)?\s*([\s\S]*)```/);
   if (fenceMatch) {
     cleaned = fenceMatch[1].trim();
   }
 
   // Tìm JSON array — lấy từ '[' đầu tiên đến ']' cuối cùng
   const start = cleaned.indexOf('[');
-  const end   = cleaned.lastIndexOf(']');
-  if (start === -1 || end === -1 || end <= start) {
-    throw new Error('No JSON array found in AI response');
+  let end = cleaned.lastIndexOf(']');
+
+  // Nếu không có ']' (bị cắt giữa chừng), dùng hết string
+  if (start === -1) {
+    throw new Error(`No JSON array found in AI response. Preview: ${cleaned.slice(0, 200)}`);
+  }
+  if (end === -1 || end <= start) {
+    // JSON bị cắt — không có ] đóng → thêm ] vào cuối
+    cleaned = cleaned.slice(start) + ']';
+    end = cleaned.length - 1;
+    console.warn('[AIGenerator] No closing ] found — appending one');
+  } else {
+    cleaned = cleaned.slice(start, end + 1);
   }
 
-  let jsonStr = cleaned.slice(start, end + 1);
+  let jsonStr = cleaned;
 
-  // Cố gắng fix JSON bị cắt giữa chừng: xóa object cuối nếu không đóng đúng
+  // Cố gắng parse JSON, nếu fail thì thử nhiều chiến thuật recover
   let testCases;
   try {
     testCases = JSON.parse(jsonStr);
-  } catch {
-    // Thử cắt bỏ phần tử cuối bị incomplete rồi đóng array
-    const lastComma = jsonStr.lastIndexOf(',');
-    if (lastComma !== -1) {
+  } catch (e1) {
+    console.warn(`[AIGenerator] JSON parse failed: ${e1.message}. Attempting recovery...`);
+
+    // Strategy 1: Tìm } cuối cùng, cắt bỏ mọi thứ sau nó, đóng array
+    const lastBrace = jsonStr.lastIndexOf('}');
+    if (lastBrace > 0) {
       try {
-        testCases = JSON.parse(jsonStr.slice(0, lastComma) + ']');
-        console.warn('[AIGenerator] JSON was truncated — recovered by dropping last incomplete test case');
-      } catch (e2) {
-        throw new Error(`Failed to parse JSON: ${e2.message}`);
+        testCases = JSON.parse(jsonStr.slice(0, lastBrace + 1) + ']');
+        console.warn(`[AIGenerator] Recovery 1 OK: cut after last }, got ${testCases.length} test cases`);
+      } catch { /* try next strategy */ }
+    }
+
+    // Strategy 2: Tìm },{ cuối cùng → cắt object cuối bị incomplete
+    if (!testCases) {
+      const lastObjSep = jsonStr.lastIndexOf('},{');
+      if (lastObjSep > 0) {
+        try {
+          testCases = JSON.parse(jsonStr.slice(0, lastObjSep + 1) + ']');
+          console.warn(`[AIGenerator] Recovery 2 OK: dropped last partial object, got ${testCases.length} test cases`);
+        } catch { /* try next strategy */ }
       }
-    } else {
-      throw new Error('Failed to parse JSON and could not recover');
+    }
+
+    // Strategy 3: Loại bỏ trailing commas rồi thử lại
+    if (!testCases) {
+      try {
+        const noTrailing = jsonStr.replace(/,\s*([}\]])/g, '$1');
+        testCases = JSON.parse(noTrailing);
+        console.warn(`[AIGenerator] Recovery 3 OK: removed trailing commas`);
+      } catch { /* give up */ }
+    }
+
+    if (!testCases) {
+      throw new Error(`Failed to parse JSON after all recovery attempts. Original error: ${e1.message}. Preview: ${jsonStr.slice(0, 200)}`);
     }
   }
 
@@ -343,25 +415,36 @@ function parseAndValidateTestCases(rawText) {
     throw new Error('AI returned empty or invalid test cases array');
   }
 
-  const required = ['no', 'testCase', 'preCondition', 'steps', 'expected'];
-  for (const tc of testCases) {
+  console.log(`[AIGenerator] Parsed ${testCases.length} test cases`);
+
+  // Validate — nhưng bỏ qua test case thiếu field thay vì fail toàn bộ
+  const required = ['testCase', 'steps', 'expected'];
+  const valid = testCases.filter(tc => {
     for (const field of required) {
-      if (tc[field] === undefined || tc[field] === null) {
-        throw new Error(`Test case missing required field: "${field}"`);
+      if (tc[field] === undefined || tc[field] === null || String(tc[field]).trim() === '') {
+        console.warn(`[AIGenerator] Dropping test case (missing "${field}"): ${JSON.stringify(tc).slice(0, 100)}`);
+        return false;
       }
     }
+    return true;
+  });
+
+  if (valid.length === 0) {
+    throw new Error(`All ${testCases.length} test cases failed validation`);
   }
 
-  return testCases.map((tc, idx) => ({
-    id:           String(tc.id || `TC_${String(idx + 1).padStart(3, '0')}`),
-    no:           idx + 1,
-    testCase:     String(tc.testCase),
-    preCondition: String(tc.preCondition),
-    steps:        String(tc.steps),
-    expected:     String(tc.expected),
-    priority:     String(tc.priority || 'Medium'),
-    type:         String(tc.type || 'Functional'),
-    status:       'New',
+  console.log(`[AIGenerator] ${valid.length}/${testCases.length} test cases passed validation`);
+
+  return valid.map((tc, idx) => ({
+    id: String(tc.id || `TC_${String(idx + 1).padStart(3, '0')}`),
+    no: idx + 1,
+    testCase: String(tc.testCase),
+    preCondition: String(tc.preCondition || tc.precondition || ''),
+    steps: String(tc.steps),
+    expected: String(tc.expected),
+    priority: String(tc.priority || 'Medium'),
+    type: String(tc.type || 'Functional'),
+    status: 'New',
   }));
 }
 
@@ -384,7 +467,11 @@ async function runBatch(taskData, figmaData, batch, config) {
       lastError = err;
       console.error(`[AIGenerator] Batch "${batch.label}" attempt ${attempt} failed: ${err.message}`);
       if (attempt < MAX_RETRIES) {
-        await new Promise(r => setTimeout(r, Math.pow(2, attempt - 1) * 1000));
+        // 429 rate limit → wait 65s for the per-minute window to reset
+        const is429 = err.message.includes('429') || err.message.includes('rate_limit');
+        const waitMs = is429 ? 65000 : Math.pow(2, attempt - 1) * 2000;
+        console.log(`[AIGenerator] Waiting ${waitMs / 1000}s before retry (${is429 ? 'rate limit' : 'backoff'})...`);
+        await new Promise(r => setTimeout(r, waitMs));
       }
     }
   }
@@ -423,7 +510,15 @@ async function generateTestCases(taskData, figmaData, config) {
   const batchErrors = [];
   let globalCounter = 1;
 
-  for (const batch of batches) {
+  for (let i = 0; i < batches.length; i++) {
+    const batch = batches[i];
+
+    // Delay between batches to respect rate limits (8,000 output tokens/min for Claude)
+    if (i > 0 && config.aiProvider !== 'openai') {
+      console.log(`[AIGenerator] Waiting 65s between batches to respect Claude rate limit...`);
+      await new Promise(r => setTimeout(r, 65000));
+    }
+
     const result = await runBatch(taskData, figmaData, batch, config);
     if (result && result.failed) {
       batchErrors.push(`[${result.batchLabel}]: ${result.error}`);

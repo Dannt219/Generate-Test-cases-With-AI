@@ -337,7 +337,7 @@ function _testLocally() {
         fileName:   'TestCases_AIEDU-11_2026-03-30',
         platform:   'mobile',
         issueTitle: '[EDU] Login screen improvements',
-        issueUrl:   'https://lumiaidan01.atlassian.net/browse/AIEDU-11',
+        issueUrl:   'https://your-site.atlassian.net/browse/PROJ-11',
         assignee:   'Nguyen Van A',
         testCases: [
           { no: 1, testCase: 'Login with valid credentials', preCondition: 'User is on login screen', steps: '1. Enter valid email\n2. Enter password\n3. Tap Login', expected: 'User is logged in', priority: 'High', inSprint: 'Yes', automatable: 'Yes' },

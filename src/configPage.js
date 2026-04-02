@@ -16,13 +16,13 @@ import ForgeUI, {
 import { storage } from '@forge/api';
 
 const KEYS = {
-  AI_PROVIDER:    'ai-provider',
-  AI_API_KEY:     'ai-api-key',
-  FIGMA_TOKEN:    'figma-token',
+  AI_PROVIDER: 'ai-provider',
+  AI_API_KEY: 'ai-api-key',
+  FIGMA_TOKEN: 'figma-token',
   GOOGLE_SA_JSON: 'google-sa-json',
   SPREADSHEET_ID: 'spreadsheet-id',
-  SHARE_EMAILS:   'share-emails',
-  APP_CONTEXT:    'app-context',
+  SHARE_EMAILS: 'share-emails',
+  APP_CONTEXT: 'app-context',
 };
 
 const App = () => {
@@ -35,21 +35,21 @@ const App = () => {
       storage.get(KEYS.APP_CONTEXT),
     ]);
     return {
-      aiProvider:    provider       || 'claude',
-      spreadsheetId: spreadsheetId  || '',
-      shareEmails:   shareEmails    || '',
-      appContext:    appContext      || '',
+      aiProvider: provider || 'claude',
+      spreadsheetId: spreadsheetId || '',
+      shareEmails: shareEmails || '',
+      appContext: appContext || '',
     };
   });
 
   const onSubmit = async (formData) => {
-    await storage.set(KEYS.AI_PROVIDER,    formData.aiProvider    || 'claude');
+    await storage.set(KEYS.AI_PROVIDER, formData.aiProvider || 'claude');
     await storage.set(KEYS.SPREADSHEET_ID, formData.spreadsheetId || '');
-    await storage.set(KEYS.SHARE_EMAILS,   formData.shareEmails   || '');
-    await storage.set(KEYS.APP_CONTEXT,    formData.appContext    || '');
+    await storage.set(KEYS.SHARE_EMAILS, formData.shareEmails || '');
+    await storage.set(KEYS.APP_CONTEXT, formData.appContext || '');
 
-    if (formData.aiApiKey?.trim())     await storage.setSecret(KEYS.AI_API_KEY,     formData.aiApiKey.trim());
-    if (formData.figmaToken?.trim())   await storage.setSecret(KEYS.FIGMA_TOKEN,    formData.figmaToken.trim());
+    if (formData.aiApiKey?.trim()) await storage.setSecret(KEYS.AI_API_KEY, formData.aiApiKey.trim());
+    if (formData.figmaToken?.trim()) await storage.setSecret(KEYS.FIGMA_TOKEN, formData.figmaToken.trim());
     if (formData.googleSaJson?.trim()) await storage.setSecret(KEYS.GOOGLE_SA_JSON, formData.googleSaJson.trim());
 
     setSaved(true);
